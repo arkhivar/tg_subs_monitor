@@ -28,7 +28,7 @@ class GristSimpleClient:
         self.doc_id = os.environ.get("GRIST_DOC_ID")
         
         # Get table name from config or environment
-        from config import SUBSCRIBERS_TABLE
+        from config import SUBSCRIBERS_TABLE, GRIST_SERVER
         self.table_name = SUBSCRIBERS_TABLE
         
         # Check for required credentials
@@ -37,9 +37,12 @@ class GristSimpleClient:
             self.api = None
         else:
             try:
-                # Initialize the API client
-                self.api = GristDocAPI(self.doc_id, api_key=self.api_key)
-                logger.info(f"Initialized Grist client for document: {self.doc_id}")
+                # Initialize the API client.
+                # grist-api's GristDocAPI accepts a `server` kwarg (verified for
+                # 0.1.1) and appends '/api/docs/<doc_id>/' itself, so pass the
+                # bare instance base URL from GRIST_SERVER (no '/api' suffix).
+                self.api = GristDocAPI(self.doc_id, api_key=self.api_key, server=GRIST_SERVER)
+                logger.info(f"Initialized Grist client for document: {self.doc_id} on server: {GRIST_SERVER}")
             except Exception as e:
                 logger.error(f"Error initializing Grist client: {e}")
                 self.api = None
