@@ -1,6 +1,6 @@
 [project]
 name = "tg_subs_monitor"
-version = "0.2.0"
+version = "0.3.0"
 description = "Telegram subscriber monitor backed by a self-hosted Grist document"
 requires-python = ">=3.11"
 dependencies = [
