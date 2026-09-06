@@ -11,13 +11,22 @@ if not TELEGRAM_BOT_TOKEN:
 GRIST_API_KEY = os.environ.get('GRIST_API_KEY')
 GRIST_DOC_ID = os.environ.get('GRIST_DOC_ID')
 
+# Grist server base URL. For a self-hosted Grist instance set this to the
+# instance URL (e.g. 'https://grist.internal.example.com'). Do NOT append an
+# '/api' suffix: the grist-api client (GristDocAPI) builds '/api/docs/...'
+# paths itself, so config.py and grist_simple_client.py stay consistent.
+GRIST_SERVER = os.environ.get('GRIST_SERVER', 'https://api.getgrist.com')
+
 if not GRIST_API_KEY or not GRIST_DOC_ID:
     raise ValueError("Grist API credentials (GRIST_API_KEY, GRIST_DOC_ID) are not set")
 
-# Webhook configuration (if using webhook mode)
-WEBHOOK_HOST = os.environ.get('WEBHOOK_HOST', 'https://tg-grist-tracker.replit.app')
-WEBHOOK_PATH = f'/webhook/{TELEGRAM_BOT_TOKEN}'
-WEBHOOK_URL = f'{WEBHOOK_HOST}{WEBHOOK_PATH}'
+# Webhook configuration (only used when BOT_MODE='webhook')
+# WEBHOOK_HOST has no default: webhook mode requires it to be set explicitly.
+# WEBHOOK_PATH/WEBHOOK_URL are only built when WEBHOOK_HOST is set, so polling
+# mode works without any webhook configuration.
+WEBHOOK_HOST = os.environ.get('WEBHOOK_HOST')
+WEBHOOK_PATH = f'/webhook/{TELEGRAM_BOT_TOKEN}' if WEBHOOK_HOST else None
+WEBHOOK_URL = f'{WEBHOOK_HOST}{WEBHOOK_PATH}' if WEBHOOK_HOST else None
 
 # Server configuration
 SERVER_HOST = '0.0.0.0'
