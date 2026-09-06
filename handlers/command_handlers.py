@@ -95,8 +95,7 @@ async def setup_command_handlers(grist_client):
             "/status - Show bot status\n"
             "\n"
             "🔶 <b>Admin Commands</b>\n"
-            "/sync - Sync data with your channel\n"
-            "/reset - Reset all data (admin only)\n"
+            "/sync - Sync channel admins into Grist (admin only)\n"
         )
     
     @router.message(Command("stats"))
@@ -190,7 +189,7 @@ async def setup_command_handlers(grist_client):
     
     @router.message(Command("sync"))
     async def cmd_sync(message: Message):
-        """Handle the /sync command to synchronize channel admins."""
+        """Handle the /sync command to synchronize channel admins into Grist."""
         user_id = message.from_user.id
         
         try:
@@ -202,11 +201,66 @@ async def setup_command_handlers(grist_client):
                 await message.answer("⛔ This command is only available to channel administrators.")
                 return
             
-            await message.answer("🔄 Synchronizing channel data...")
+            await message.answer("🔄 Synchronizing channel admins...")
             
-            # This would typically involve fetching channel admins, but for this example
-            # we'll just confirm the action was taken
-            await message.answer("✅ Channel data synchronized successfully.")
+            # Ported from the removed telegram_grist_webhook.sync_channel_members():
+            # fetch the chat administrator roster and upsert every non-bot admin
+            # into Grist with is_admin=True.
+            chat_id = message.chat.id
+            admins = await message.bot.get_chat_administrators(chat_id)
+            
+            added_count = 0
+            updated_count = 0
+            skipped_bots = 0
+            
+            for admin in admins:
+                user = admin.user
+                if user.is_bot:
+                    skipped_bots += 1
+                    continue
+                
+                admin_user_id = str(user.id)
+                existing = grist_client.get_subscriber(admin_user_id)
+                
+                if existing:
+                    # Mark as admin; reactivate if previously marked inactive
+                    record_id = _value(existing, 'id')
+                    update_data = {'id': record_id, 'is_admin': True}
+                    try:
+                        grist_client.api.update_records(grist_client.table_name, [update_data])
+                        logger.info(f"✅ Marked existing subscriber {admin_user_id} as admin")
+                    except Exception as e:
+                        logger.error(f"❌ Error marking {admin_user_id} as admin: {e}")
+                    
+                    if _value(existing, 'current_status') != 'active':
+                        grist_client.update_subscriber_rejoin(admin_user_id, record_id)
+                    updated_count += 1
+                else:
+                    # Add new subscriber as an active admin
+                    user_data = {
+                        'user_id': admin_user_id,
+                        'username': user.username or '',
+                        'first_name': user.first_name or '',
+                        'last_name': user.last_name or '',
+                        'join_date': datetime.now().isoformat(),
+                        'current_status': 'active',
+                        'reaction_counter': 0,
+                        'is_admin': True
+                    }
+                    grist_client.add_subscriber(user_data)
+                    added_count += 1
+            
+            logger.info(
+                f"Sync completed for chat {chat_id}: {len(admins)} admins, "
+                f"{added_count} added, {updated_count} updated, {skipped_bots} bots skipped"
+            )
+            await message.answer(
+                "✅ <b>Channel admin sync complete</b>\n\n"
+                f"👑 Admins found: {len(admins)}\n"
+                f"➕ Added: {added_count}\n"
+                f"🔄 Updated: {updated_count}\n"
+                f"🤖 Bots skipped: {skipped_bots}"
+            )
             
         except Exception as e:
             logger.error(f"Error in sync command: {e}")
