@@ -195,7 +195,7 @@ class GristSimpleClient:
         except Exception as e:
             logger.error(f"❌ Error recording event: {e}")
             return False
-        
+
     def get_subscriber(self, user_id):
         """
         Get a subscriber record by user_id.
