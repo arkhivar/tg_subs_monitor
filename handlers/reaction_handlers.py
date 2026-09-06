@@ -13,6 +13,32 @@ from datetime import datetime
 # Create a router for reaction handlers
 router = Router()
 
+def _first_tracked_emoji(reaction_update):
+    """Extract the first tracked emoji from a reaction update ('' if none)."""
+    for reaction_type in getattr(reaction_update, 'new_reaction', []) or []:
+        emoji = getattr(reaction_type, 'emoji', None)
+        if emoji is None:
+            inner = getattr(reaction_type, 'type', None)
+            emoji = getattr(inner, 'emoji', None)
+        if emoji and emoji in TRACKED_REACTIONS:
+            return emoji
+    return ''
+
+def _add_anonymous_reaction_event(grist_client, chat_id, message_id, reaction_update,
+                                  user_id='', username='', first_name=''):
+    """Record a reaction event row for anonymous (no from-user) reactions."""
+    grist_client.add_event({
+        'event_type': 'reaction',
+        'user_id': str(user_id) if user_id else '',
+        'username': username or '',
+        'first_name': first_name or '',
+        'chat_id': str(chat_id),
+        'message_id': message_id,
+        'reaction': _first_tracked_emoji(reaction_update),
+        'comment_text': '',
+        'event_date': datetime.now()
+    })
+
 async def setup_reaction_handlers(grist_client):
     """Set up reaction handlers with the provided storage."""
     logger.info("SETUP: Initializing reaction handlers")
@@ -71,6 +97,7 @@ async def setup_reaction_handlers(grist_client):
             
             # Count new reactions added
             added_reactions = 0
+            tracked_emojis = []
             for reaction_type in reaction_update.new_reaction:
                 # Handle different reaction structure safely
                 try:
@@ -87,6 +114,7 @@ async def setup_reaction_handlers(grist_client):
                 logger.info(f"➕ User {user_id} added reaction {emoji} to message {message_id} in chat {chat_id}")
                 if emoji in TRACKED_REACTIONS:
                     added_reactions += 1
+                    tracked_emojis.append(emoji)
             
             # Only proceed if we have reactions to track
             if added_reactions > 0:
@@ -108,6 +136,19 @@ async def setup_reaction_handlers(grist_client):
                     try:
                         grist_client.api.update_records(grist_client.table_name, [update_data])
                         logger.info(f"✅ Updated reaction count for user {user_id} to {reaction_counter}")
+                        # Record one events-table row per tracked emoji added
+                        for tracked_emoji in tracked_emojis:
+                            grist_client.add_event({
+                                'event_type': 'reaction',
+                                'user_id': str(user_id),
+                                'username': username or '',
+                                'first_name': first_name or '',
+                                'chat_id': str(chat_id),
+                                'message_id': message_id,
+                                'reaction': tracked_emoji,
+                                'comment_text': '',
+                                'event_date': datetime.now()
+                            })
                     except Exception as e:
                         logger.error(f"❌ Error updating reaction count: {e}")
                 else:
@@ -126,8 +167,21 @@ async def setup_reaction_handlers(grist_client):
                     }
                     
                     try:
-                        grist_client.add_subscriber(new_user)
-                        logger.info(f"✅ Created new subscriber from reaction: {user_id}")
+                        if grist_client.add_subscriber(new_user):
+                            logger.info(f"✅ Created new subscriber from reaction: {user_id}")
+                            # Record one events-table row per tracked emoji added
+                            for tracked_emoji in tracked_emojis:
+                                grist_client.add_event({
+                                    'event_type': 'reaction',
+                                    'user_id': str(user_id),
+                                    'username': username or '',
+                                    'first_name': first_name or '',
+                                    'chat_id': str(chat_id),
+                                    'message_id': message_id,
+                                    'reaction': tracked_emoji,
+                                    'comment_text': '',
+                                    'event_date': datetime.now()
+                                })
                     except Exception as e:
                         logger.error(f"❌ Error creating subscriber from reaction: {e}")
         else:
@@ -161,6 +215,8 @@ async def setup_reaction_handlers(grist_client):
                         try:
                             grist_client.api.update_records(grist_client.table_name, [update_data])
                             logger.info(f"✅ Updated reaction count for message author (admin) {msg_user_id} to {reaction_counter}")
+                            # Anonymous reaction: reactor identity unknown, user fields left empty
+                            _add_anonymous_reaction_event(grist_client, chat_id, message_id, reaction_update)
                         except Exception as e:
                             logger.error(f"❌ Error updating message author reaction count: {e}")
             except Exception as e:
@@ -189,9 +245,15 @@ async def setup_reaction_handlers(grist_client):
                     try:
                         grist_client.api.update_records(grist_client.table_name, [update_data])
                         logger.info(f"✅ Updated reaction count for user {user_id} to {reaction_counter}")
+                        # Record reaction event; actor user_id is known here
+                        _add_anonymous_reaction_event(
+                            grist_client, chat_id, message_id, reaction_update,
+                            user_id=user_id,
+                            username=getattr(actor, 'username', '') or '',
+                            first_name=getattr(actor, 'first_name', '') or '')
                     except Exception as e:
                         logger.error(f"❌ Error updating reaction count: {e}")
-            
+
             # Try to access the channel chat to get admin information
             try:
                 # Get chat object for detailed information
@@ -232,6 +294,8 @@ async def setup_reaction_handlers(grist_client):
                             try:
                                 grist_client.api.update_records(grist_client.table_name, [update_data])
                                 logger.info(f"✅ Updated reaction count for channel creator {user_id} to {reaction_counter}")
+                                # Anonymous reaction: reactor identity unknown, user fields left empty
+                                _add_anonymous_reaction_event(grist_client, chat_id, message_id, reaction_update)
                             except Exception as e:
                                 logger.error(f"❌ Error updating creator reaction count: {e}")
                 
@@ -257,6 +321,8 @@ async def setup_reaction_handlers(grist_client):
                         try:
                             grist_client.api.update_records(grist_client.table_name, [update_data])
                             logger.info(f"✅ Updated reaction count for bot admin {bot_id} to {reaction_counter}")
+                            # Anonymous reaction: reactor identity unknown, user fields left empty
+                            _add_anonymous_reaction_event(grist_client, chat_id, message_id, reaction_update)
                         except Exception as e:
                             logger.error(f"❌ Error updating bot admin reaction count: {e}")
                     else:
