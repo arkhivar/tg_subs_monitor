@@ -19,6 +19,7 @@ from utils.logger import logger
 from handlers.reaction_handlers import setup_reaction_handlers
 from handlers.member_handlers import setup_member_handlers
 from handlers.command_handlers import setup_command_handlers
+from handlers.comment_handlers import setup_comment_handlers
 
 # Import Grist client for data storage
 from grist_simple_client import GristSimpleClient
@@ -30,6 +31,10 @@ async def setup_bot():
     if not grist_client.init_table():
         logger.error("Failed to initialize Grist table")
         sys.exit(1)
+
+    # The events table is additive: warn but keep running if it's missing
+    if not grist_client.init_events_table():
+        logger.warning("Events table not initialized — event logging will fail until it is created in Grist")
     
     # Initialize bot and dispatcher with proper parameters
     bot = Bot(token=TELEGRAM_BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -39,11 +44,13 @@ async def setup_bot():
     reaction_router = await setup_reaction_handlers(grist_client)
     member_router = await setup_member_handlers(grist_client)
     command_router = await setup_command_handlers(grist_client)
-    
+    comment_router = await setup_comment_handlers(grist_client)
+
     # Include routers in the dispatcher
     dp.include_router(reaction_router)
     dp.include_router(member_router)
     dp.include_router(command_router)
+    dp.include_router(comment_router)
     
     # Set up error handling
     @dp.errors()
