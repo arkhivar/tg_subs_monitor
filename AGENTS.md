@@ -14,7 +14,8 @@ handlers/
   __init__.py
   command_handlers.py       /start /help /stats /reactions /status /sync
   member_handlers.py        join/leave/rejoin + admin-status changes
-  reaction_handlers.py      message_reaction + message_reaction_count updates
+  reaction_handlers.py      message_reaction + message_reaction_count updates (debug-verbose; keep as-is)
+  comment_handlers.py       discussion-group text messages → comment events
 utils/logger.py             shared logger ('tg_grist_bot')
 run_bot.py                  asyncio entry with signal handling
 run_telegram_bot.sh         thin wrapper around run_bot.py
@@ -32,16 +33,21 @@ Earlier iterations of this repo contained several competing generations (a RAM-b
 
 ## Grist schema contract
 
-One table whose **API name** is `SUBSCRIBERS_TABLE` in `config.py` (currently `Table1`; the UI display name is irrelevant). Columns: `user_id` (Text), `username`, `first_name`, `last_name` (Text), `join_date`, `leave_date`, `rejoin_date`, `last_reacted` (Date), `current_status` (Text: `active`/`inactive`), `reaction_counter` (Numeric), `is_admin` (Toggle).
+Two tables:
+
+1. **Subscribers** (aggregate state, one row per user) whose **API name** is `SUBSCRIBERS_TABLE` in `config.py` (currently `Table1`; the UI display name is irrelevant). Columns: `user_id` (Text), `username`, `first_name`, `last_name` (Text), `join_date`, `leave_date`, `rejoin_date`, `last_reacted` (Date), `current_status` (Text: `active`/`inactive`), `reaction_counter` (Numeric), `is_admin` (Toggle).
+2. **Events** (append-only timeline, one row per event) whose API name is `EVENTS_TABLE` in `config.py` (default `events`). Columns: `event_type` (Text: `join`/`leave`/`rejoin`/`reaction`/`comment`), `user_id`, `username`, `first_name`, `chat_id` (Text), `message_id` (Numeric, 0 when n/a), `reaction` (Text — emoji, only for reaction events), `comment_text` (Text — first 500 chars, only for comments), `event_date` (Date). Every `add_event` call site passes all of these keys. grist-api 0.1.1 has **no table-creation method**, so `init_events_table()` probes and logs the schema; create the table in the Grist UI once.
 
 ## Quirks to know before editing
 
 - **`user_id` is stored as Text.** All lookups stringify IDs. Keep that.
 - **Pseudo-rows in the same table:** `channel_<chat_id>` aggregates anonymous channel reaction counts; `admin_<bot_id>` is a fallback record for reactions we cannot attribute. `/stats` and `/reactions` count these rows as "subscribers" — acceptable for now, but filter them if you build per-user analytics.
-- **Dates:** the code writes `datetime.now().isoformat()` strings into Grist Date columns. Grist expects epoch timestamps for Date columns; whether the doc actually stores these strings correctly is **unverified — verify against the real doc next session** and migrate to `datetime` objects (grist-api converts those) if needed.
+- **Dates:** the code writes `datetime.now().isoformat()` strings into Grist Date columns. Grist expects epoch timestamps for Date columns; whether the doc actually stores these strings correctly is **unverified — verify against the real doc next session** and migrate to `datetime` objects (grist-api converts those) if needed. Note the asymmetry: the **events table** writes `datetime.now()` **objects** (correct) while the legacy **subscribers** table still writes ISO strings (known issue).
 - **`/sync` is now real**: it calls `bot.get_chat_administrators` and upserts each non-bot admin (add if missing, set `is_admin=True` + reactivate if present). It was ported from the deleted `telegram_grist_webhook.py`. Note it syncs the chat where the command was issued.
 - **grist-api `server=` kwarg**: verified against grist-api 0.1.1 — `GristDocAPI(doc_id, api_key=..., server=GRIST_SERVER)`; the client appends `/api/docs/<doc_id>/` itself, so `GRIST_SERVER` must be the bare instance URL without `/api`.
 - **`GRIST_SERVER` config**: `config.py` holds `os.environ.get('GRIST_SERVER', 'https://api.getgrist.com')`; `grist_simple_client` and `tools/explore_grist_tables.py` must stay consistent with it.
+- **Comment coverage**: `handlers/comment_handlers.py` records text messages in group/supergroup chats as `comment` events (commands, bot senders, and service messages ignored). Comments on channel posts arrive in the channel's **linked discussion group** — the bot must be a member there with message access (admin, or privacy mode disabled) to see them.
+- **History note**: comments were never persisted by any earlier generation — only debug-logged; the events table is the first real comment/event storage.
 - **Webhook config is guarded**: `WEBHOOK_PATH`/`WEBHOOK_URL` are `None` unless `WEBHOOK_HOST` is set, so polling mode needs no webhook vars. `bot.start_webhook()` exits with an error if `BOT_MODE=webhook` but `WEBHOOK_HOST` is unset.
 
 ## Run modes
