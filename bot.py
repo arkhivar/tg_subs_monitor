@@ -106,6 +106,11 @@ async def start_webhook():
     """Start the bot in webhook mode."""
     from aiohttp import web
     
+    if not WEBHOOK_URL:
+        logger.error("BOT_MODE is 'webhook' but WEBHOOK_HOST is not set. "
+                     "Set WEBHOOK_HOST or switch BOT_MODE to 'polling'.")
+        sys.exit(1)
+    
     logger.info("Starting the bot in webhook mode")
     
     bot, dp, grist_client = await setup_bot()
