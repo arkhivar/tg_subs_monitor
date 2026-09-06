@@ -92,17 +92,39 @@ async def setup_member_handlers(grist_client):
                 # User exists, update as rejoin
                 record_id = subscriber.get('id')
                 logger.info(f"♻️ User {user_id} rejoined chat {chat_id}")
-                grist_client.update_subscriber_rejoin(user_id, record_id)
+                if grist_client.update_subscriber_rejoin(user_id, record_id):
+                    grist_client.add_event({
+                        'event_type': 'rejoin',
+                        'user_id': str(user_id),
+                        'username': user_info['username'],
+                        'first_name': user_info['first_name'],
+                        'chat_id': str(chat_id),
+                        'message_id': 0,
+                        'reaction': '',
+                        'comment_text': '',
+                        'event_date': datetime.now()
+                    })
             else:
                 # New user, add to Grist
                 logger.info(f"➕ User {user_id} joined chat {chat_id}")
-                
+
                 # Add join date and status
                 user_info['join_date'] = datetime.now().isoformat()
                 user_info['current_status'] = 'active'
                 user_info['reaction_counter'] = 0
-                
-                grist_client.add_subscriber(user_info)
+
+                if grist_client.add_subscriber(user_info):
+                    grist_client.add_event({
+                        'event_type': 'join',
+                        'user_id': str(user_id),
+                        'username': user_info['username'],
+                        'first_name': user_info['first_name'],
+                        'chat_id': str(chat_id),
+                        'message_id': 0,
+                        'reaction': '',
+                        'comment_text': '',
+                        'event_date': datetime.now()
+                    })
             
         # Check if user left
         elif (old_status in ["member", "administrator", "creator"] and 
@@ -111,19 +133,33 @@ async def setup_member_handlers(grist_client):
             
             # Check if the user exists in Grist
             subscriber = grist_client.get_subscriber(user_id)
+            leave_recorded = False
             if subscriber:
                 # User exists, update as left
                 record_id = subscriber.get('id')
-                grist_client.update_subscriber_leave(user_id, record_id)
+                leave_recorded = grist_client.update_subscriber_leave(user_id, record_id)
             else:
                 logger.warning(f"⚠️ User {user_id} left but wasn't in the database")
-                
+
                 # Add them with left status for historical record
                 user_info['join_date'] = datetime.now().isoformat()
                 user_info['leave_date'] = datetime.now().isoformat()
                 user_info['current_status'] = 'inactive'
                 user_info['reaction_counter'] = 0
-                
-                grist_client.add_subscriber(user_info)
+
+                leave_recorded = grist_client.add_subscriber(user_info)
+
+            if leave_recorded:
+                grist_client.add_event({
+                    'event_type': 'leave',
+                    'user_id': str(user_id),
+                    'username': user_info['username'],
+                    'first_name': user_info['first_name'],
+                    'chat_id': str(chat_id),
+                    'message_id': 0,
+                    'reaction': '',
+                    'comment_text': '',
+                    'event_date': datetime.now()
+                })
     
     return router
