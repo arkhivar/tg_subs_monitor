@@ -55,6 +55,29 @@ Columns:
 | `last_reacted` | Date | |
 | `is_admin` | Toggle | |
 
+### Events table
+
+In addition to the subscribers table (aggregate state, one row per user), create a second table — an **append-only timeline with one row per event**. The bot reads its API name from `EVENTS_TABLE` in `config.py` (default `events`). Note: grist-api cannot create tables, so create it once in the Grist UI; at startup the bot probes it and logs the required schema if missing.
+
+Columns:
+
+| Column | Type | Notes |
+|---|---|---|
+| `event_type` | Text | `join` / `leave` / `rejoin` / `reaction` / `comment` |
+| `user_id` | Text | Empty for anonymous reactions |
+| `username` | Text | |
+| `first_name` | Text | |
+| `chat_id` | Text | |
+| `message_id` | Numeric | 0 when not applicable |
+| `reaction` | Text | Emoji, only for reaction events |
+| `comment_text` | Text | First 500 chars, only for comment events |
+| `event_date` | Date | Written as a `datetime` object (grist-api converts it to the Grist epoch) |
+
+### Setup in Telegram
+
+- The bot must be an **admin in the channel** to receive join/leave updates and reaction updates.
+- For **comments**, add the bot as a member of the channel's **linked discussion group** with message access (admin there, or group privacy mode disabled via BotFather) — comments on channel posts arrive as messages in that group, not in the channel.
+
 ## Running
 
 ```bash
@@ -75,5 +98,5 @@ Webhook mode (optional): set `BOT_MODE=webhook`, `WEBHOOK_HOST=https://<public-u
 ## Roadmap
 
 - Grist-side dashboard widget for subscriber stats, reusing the `arkhivar/grist` design system (`shared/base.css`, `shared/core.js`).
-- Dedicated reactions-event table (one row per reaction) instead of only an aggregate counter.
+- ~~Dedicated reactions-event table~~ — done: the `events` table now holds one row per join/leave/rejoin/reaction/comment.
 - Automated tests.
