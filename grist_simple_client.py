@@ -28,8 +28,9 @@ class GristSimpleClient:
         self.doc_id = os.environ.get("GRIST_DOC_ID")
         
         # Get table name from config or environment
-        from config import SUBSCRIBERS_TABLE, GRIST_SERVER
+        from config import SUBSCRIBERS_TABLE, EVENTS_TABLE, GRIST_SERVER
         self.table_name = SUBSCRIBERS_TABLE
+        self.events_table_name = EVENTS_TABLE
         
         # Check for required credentials
         if not self.api_key or not self.doc_id:
@@ -89,6 +90,112 @@ class GristSimpleClient:
             logger.error(f"Error initializing table: {e}")
             return False
     
+    def init_events_table(self):
+        """
+        Check if the events table exists by trying to fetch records.
+
+        NOTE on table creation: grist-api 0.1.1 (GristDocAPI) has no
+        add_table / table-creation method — it only exposes fetch/add/update/
+        delete_records on existing tables — so this method cannot auto-create
+        the table. Like init_table(), it probes and prints the required
+        schema; the events table must be created once in the Grist UI.
+
+        Returns:
+            bool: Success status
+        """
+        try:
+            logger.info(f"Checking if Grist events table '{self.events_table_name}' exists")
+
+            if not self.api:
+                logger.error("Grist API client not initialized")
+                return False
+
+            try:
+                response = self.api.fetch_table(self.events_table_name)
+                logger.debug(f"Grist response type: {type(response)}")
+
+                if isinstance(response, list):
+                    logger.info(f"Events table '{self.events_table_name}' exists with {len(response)} records")
+                else:
+                    logger.info(f"Events table '{self.events_table_name}' exists but returned unexpected data type: {type(response)}")
+
+                return True
+            except Exception as e:
+                if "Table not found" in str(e):
+                    logger.info(f"Events table '{self.events_table_name}' doesn't exist. Please create it in the Grist UI.")
+                    logger.info(f"Required columns: event_type (Text: join/leave/rejoin/reaction/comment), " +
+                             f"user_id (Text), username (Text), first_name (Text), chat_id (Text), " +
+                             f"message_id (Numeric, 0 when n/a), reaction (Text - emoji, only for reactions), " +
+                             f"comment_text (Text - excerpt, only for comments), event_date (Date)")
+                    return False
+                else:
+                    logger.error(f"Error checking if events table exists: {e}")
+                    return False
+        except Exception as e:
+            logger.error(f"Error initializing events table: {e}")
+            return False
+
+    def add_event(self, event_data):
+        """
+        Add a single event row to the append-only events table.
+
+        Expected keys (all optional, defaulted defensively):
+            event_type, user_id, username, first_name, chat_id,
+            message_id, reaction, comment_text, event_date
+
+        Unlike the legacy subscribers-table writes (ISO strings), event_date
+        is passed as a datetime OBJECT — grist-api converts datetimes to the
+        Grist epoch timestamp for Date columns.
+
+        Args:
+            event_data: Dict containing event information
+
+        Returns:
+            bool: Success status
+        """
+        try:
+            logger.info(f"🗓️ EVENT: Recording event with data: {event_data}")
+
+            if not self.api:
+                logger.error("❌ Grist API client not initialized")
+                return False
+
+            event_date = event_data.get('event_date')
+            if event_date is None:
+                event_date = datetime.now()
+            elif isinstance(event_date, str):
+                # Accept ISO strings defensively, but prefer datetime objects
+                try:
+                    event_date = datetime.fromisoformat(event_date)
+                except ValueError:
+                    logger.warning(f"⚠️ Unparseable event_date '{event_date}', using now()")
+                    event_date = datetime.now()
+
+            new_record = {
+                'event_type': event_data.get('event_type', ''),
+                'user_id': str(event_data.get('user_id', '') or ''),
+                'username': event_data.get('username', '') or '',
+                'first_name': event_data.get('first_name', '') or '',
+                'chat_id': str(event_data.get('chat_id', '') or ''),
+                'message_id': int(event_data.get('message_id', 0) or 0),
+                'reaction': event_data.get('reaction', '') or '',
+                'comment_text': event_data.get('comment_text', '') or '',
+                'event_date': event_date
+            }
+
+            logger.info(f"📝 Prepared event record for Grist: {new_record}")
+
+            try:
+                result = self.api.add_records(self.events_table_name, [new_record])
+                logger.info(f"✅ Successfully recorded event '{new_record['event_type']}', Result: {result}")
+                return True
+            except Exception as e:
+                logger.error(f"❌ Error adding event to Grist: {e}")
+                return False
+        except Exception as e:
+            logger.error(f"❌ Error recording event: {e}")
+            return False
+        
     def get_subscriber(self, user_id):
         """
         Get a subscriber record by user_id.
