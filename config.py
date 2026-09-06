@@ -45,5 +45,12 @@ TRACKED_REACTIONS = [
 # Table name in Grist
 SUBSCRIBERS_TABLE = "Table1"
 
+# Events table: append-only timeline with one row per event.
+# event_type (Text: join/leave/rejoin/reaction/comment), user_id (Text),
+# username (Text), first_name (Text), chat_id (Text), message_id (Numeric,
+# 0 when n/a), reaction (Text - emoji, only for reaction events),
+# comment_text (Text - excerpt, only for comments), event_date (Date).
+EVENTS_TABLE = os.environ.get('EVENTS_TABLE', 'events')
+
 # Bot mode: 'polling' or 'webhook'
 BOT_MODE = os.environ.get('BOT_MODE', 'polling')
