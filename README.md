@@ -1,88 +1,79 @@
 # tg_subs_monitor
 
-This project provides a Telegram bot that tracks and maintains subscriber data using Grist as a dynamic, real-time database platform. The application captures comprehensive subscriber lifecycle events with advanced logging and tracking capabilities.
+A Telegram bot that tracks channel subscriber activity — joins, leaves, rejoins, and message reactions — and writes everything into a [Grist](https://www.getgrist.com/) document. The Grist document is both the database and the UI: there is no web framework in this repo.
 
-## Features
+## What it does
 
-- Tracks when users join, leave, or rejoin a channel (maintaining historical data)
-- Records user reactions with reaction counts and last reaction timestamp
-- Provides a web interface to view bot status and subscriber statistics
-- Integrates with Grist for reliable structured data storage
+- Records every join / leave / rejoin of a channel or group member, keeping historical dates (`join_date`, `leave_date`, `rejoin_date`).
+- Counts reactions per subscriber (`reaction_counter`, `last_reacted`) for the emojis listed in `TRACKED_REACTIONS`.
+- Handles anonymous channel reactions via aggregate pseudo-records (see below).
+- `/sync` command: pulls the chat administrator roster and upserts admins into Grist with `is_admin=True`.
 
-## Environment Setup
+## Architecture
 
-This application requires the following environment variables to be set:
+- **`bot.py`** — aiogram 3 entry point. Polling is the default; set `BOT_MODE=webhook` (plus `WEBHOOK_HOST`) to serve updates over an aiohttp webhook instead.
+- **`handlers/`** — aiogram routers: `member_handlers.py` (join/leave), `reaction_handlers.py` (reactions), `command_handlers.py` (`/start`, `/help`, `/stats`, `/reactions`, `/status`, `/sync`).
+- **`grist_simple_client.py`** — thin wrapper around `grist-api`'s `GristDocAPI`. All bot-to-Grist traffic goes through the Grist REST API.
+- **`config.py`** — environment-driven configuration; import-time validation of required variables.
 
-- `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
-- `GRIST_API_KEY`: API key for Grist
-- `GRIST_DOC_ID`: Document ID for your Grist document
+### The Grist document is the source of truth AND the UI
 
-## Grist Database Configuration
+All subscriber data lives in one Grist table. To view, filter, or group subscribers, use Grist grids directly. To build dashboards, add Grist summary pages or custom widgets inside the same document — a shared widget design system lives in the sibling repo `arkhivar/grist` (`shared/base.css` + `shared/core.js`).
 
-The application uses Grist for database storage. You need to create a table with the following structure in your Grist document:
+## Setup
 
-### Table Structure
+### Environment variables
 
-The table must have these columns:
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | yes | — | Bot token from @BotFather |
+| `GRIST_API_KEY` | yes | — | Grist API key |
+| `GRIST_DOC_ID` | yes | — | Grist document ID (the part of the URL after `/doc/`) |
+| `GRIST_SERVER` | no | `https://api.getgrist.com` | Base URL of the Grist instance. For self-hosted Grist set e.g. `https://grist.internal.example.com` — **no `/api` suffix**, the client appends `/api/docs/...` itself |
+| `BOT_MODE` | no | `polling` | `polling` or `webhook` |
+| `WEBHOOK_HOST` | webhook only | — | Public HTTPS base URL of this bot; required in webhook mode |
+| `PORT` | no | `5000` | Port the aiohttp webhook server listens on |
+| `LOG_LEVEL` | no | `INFO` | Python logging level |
 
-- `user_id` (Text): Telegram user ID
-- `username` (Text): Telegram username
-- `first_name` (Text): User's first name
-- `last_name` (Text): User's last name
-- `join_date` (Date): When user first joined
-- `leave_date` (Date): When user left (if applicable)
-- `rejoin_date` (Date): When user rejoined (if applicable)
-- `current_status` (Text): Current status ('active' or 'inactive')
-- `reaction_counter` (Numeric): Count of reactions
-- `last_reacted` (Date): Timestamp of last reaction
-- `is_admin` (Toggle): Whether user is an admin
+### Grist table schema
 
-### Important Note on Table Names
+Create one table in your Grist document. The bot reads the table's **API name** from `SUBSCRIBERS_TABLE` in `config.py` (currently `Table1`). Note that a table's *display name* in the Grist UI (e.g. "subscribers") is **not** the same as its *API name* — check "Raw Data" view or the document's `/structure` endpoint (`tools/explore_grist_tables.py` prints it) and set `SUBSCRIBERS_TABLE` accordingly.
 
-In Grist, there's a difference between the display name shown in the UI and the API name used in code:
+Columns:
 
-- The display name in the UI might be "subscribers"
-- The API name could be "Table1" (or something else)
+| Column | Type | Notes |
+|---|---|---|
+| `user_id` | Text | Telegram user ID stored as **text**; also pseudo-IDs `channel_<chat_id>` and `admin_<bot_id>` |
+| `username` | Text | |
+| `first_name` | Text | |
+| `last_name` | Text | |
+| `join_date` | Date | |
+| `leave_date` | Date | |
+| `rejoin_date` | Date | |
+| `current_status` | Text | `active` / `inactive` |
+| `reaction_counter` | Numeric | |
+| `last_reacted` | Date | |
+| `is_admin` | Toggle | |
 
-The application is configured to use the API name, not the display name. This is set in `config.py`:
+## Running
 
-```python
-GRIST_TABLE_NAME = "Table1"  # Important: This is the API name, not the display name "subscribers"
+```bash
+# plain pip / venv
+pip install .
+python run_bot.py            # or: ./run_telegram_bot.sh
+
+# or with uv (lockfile is generated on the target machine)
+uv sync && uv run python run_bot.py
 ```
 
-If you need to change this, you can find the API name by looking at the Grist Data API documentation or by examining the "Raw Data Tables" section in your Grist document.
+Webhook mode (optional): set `BOT_MODE=webhook`, `WEBHOOK_HOST=https://<public-url>`, and optionally `PORT`. The bot then serves Telegram updates at `POST /webhook/<TELEGRAM_BOT_TOKEN>` via aiohttp.
 
-## Webhook Configuration
+## Development tools
 
-To receive real-time updates from Telegram, you need to set up a webhook. This requires:
+- `tools/explore_grist_tables.py` — inspects the Grist document over the REST API: document metadata, table list with column types, and sample rows for candidate table names. Honors `GRIST_SERVER`.
 
-1. A publicly accessible HTTPS URL for your application
-2. Setting this URL as the webhook for your Telegram bot
+## Roadmap
 
-You can set up the webhook using the `/set-webhook` endpoint of this application.
-
-## Running the Application
-
-To start the application:
-
-```
-gunicorn --bind 0.0.0.0:5000 main:app
-```
-
-## Troubleshooting
-
-If you're not seeing updates when users join or leave:
-
-1. Check that the webhook is properly set up (`/webhook-info` endpoint)
-2. Verify that your bot has the necessary permissions in the channel
-3. Make sure the table name in `config.py` matches the actual API name in Grist
-4. Look at the application logs for error messages
-
-## Available Routes
-
-- `/`: Main status page
-- `/webhook`: Webhook endpoint for Telegram updates
-- `/set-webhook`: Set up the Telegram webhook
-- `/remove-webhook`: Remove the Telegram webhook
-- `/bot-info`: Get information about the bot
-- `/debug-records`: View records in the Grist database (for debugging)
+- Grist-side dashboard widget for subscriber stats, reusing the `arkhivar/grist` design system (`shared/base.css`, `shared/core.js`).
+- Dedicated reactions-event table (one row per reaction) instead of only an aggregate counter.
+- Automated tests.
