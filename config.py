@@ -42,15 +42,20 @@ TRACKED_REACTIONS = [
     "🙏", "🤩", "🤯", "💯", "⚡️", "🥰", "🤬", "🤨", "🤢", "🥱"
 ]
 
-# Table name in Grist
-SUBSCRIBERS_TABLE = "Table1"
+# Table names in Grist (API names, not UI display names).
+# Users/Chats hold identities; Membership holds per user-per-chat state and
+# references both via Ref columns; Events is the append-only timeline and
+# references Users/Chats the same way.
+USERS_TABLE = os.environ.get('USERS_TABLE', 'Users')
+CHATS_TABLE = os.environ.get('CHATS_TABLE', 'Chats')
+MEMBERSHIP_TABLE = os.environ.get('MEMBERSHIP_TABLE', 'Membership')
 
 # Events table: append-only timeline with one row per event.
-# event_type (Text: join/leave/rejoin/reaction/comment), user_id (Text),
-# username (Text), first_name (Text), chat_id (Text), message_id (Numeric,
+# event_type (Text: join/leave/rejoin/reaction/comment), tg_user (Ref:Users,
+# empty for anonymous reactions), chat (Ref:Chats), message_id (Numeric,
 # 0 when n/a), reaction (Text - emoji, only for reaction events),
 # comment_text (Text - excerpt, only for comments), event_date (Date).
-EVENTS_TABLE = os.environ.get('EVENTS_TABLE', 'events')
+EVENTS_TABLE = os.environ.get('EVENTS_TABLE', 'Events')
 
 # Bot mode: 'polling' or 'webhook'
 BOT_MODE = os.environ.get('BOT_MODE', 'polling')

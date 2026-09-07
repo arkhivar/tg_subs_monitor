@@ -79,7 +79,7 @@ def explore_grist_structure():
         
         # Test 3: Try direct access to table data
         print("\nTest 3: Try different table names...")
-        table_names = ["TABLE1", "Table1", "table1", "Subscribers", "subscribers"]
+        table_names = ["Users", "Chats", "Membership", "Events"]
         for table_name in table_names:
             try:
                 response = requests.get(f"{base_url}/tables/{table_name}/data", headers=headers)

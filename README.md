@@ -37,16 +37,31 @@ All subscriber data lives in one Grist table. To view, filter, or group subscrib
 
 ### Grist table schema
 
-Create one table in your Grist document. The bot reads the table's **API name** from `SUBSCRIBERS_TABLE` in `config.py` (currently `Table1`). Note that a table's *display name* in the Grist UI (e.g. "subscribers") is **not** the same as its *API name* — check "Raw Data" view or the document's `/structure` endpoint (`tools/explore_grist_tables.py` prints it) and set `SUBSCRIBERS_TABLE` accordingly.
+The doc holds four tables; the bot reads their **API names** from `USERS_TABLE`, `CHATS_TABLE`, `MEMBERSHIP_TABLE`, `EVENTS_TABLE` in `config.py` (defaults `Users` / `Chats` / `Membership` / `Events` — note Grist capitalizes auto-generated table ids). A table's *display name* in the Grist UI is **not** the same as its *API name* — check "Raw Data" view or the document's `/structure` endpoint (`tools/explore_grist_tables.py` prints it).
 
-Columns:
+**Users** — one row per Telegram user (or pseudo-user):
 
 | Column | Type | Notes |
 |---|---|---|
-| `user_id` | Text | Telegram user ID stored as **text**; also pseudo-IDs `channel_<chat_id>` and `admin_<bot_id>` |
-| `username` | Text | |
-| `first_name` | Text | |
-| `last_name` | Text | |
+| `tg_userid` | Text | Telegram user ID stored as **text**; also pseudo-IDs `channel_<chat_id>` and `admin_<bot_id>` |
+| `tg_username` | Text | |
+| `tg_firstname` | Text | |
+| `tg_lastname` | Text | |
+
+**Chats** — one row per monitored channel/group:
+
+| Column | Type | Notes |
+|---|---|---|
+| `tg_chatid` | Text | Telegram chat ID stored as **text** |
+| `title` | Text | |
+| `type` | Text | `channel` / `supergroup` / ... |
+
+**Membership** — per user×chat aggregate state:
+
+| Column | Type | Notes |
+|---|---|---|
+| `tg_user` | Ref:Users | |
+| `chat` | Ref:Chats | |
 | `join_date` | Date | |
 | `leave_date` | Date | |
 | `rejoin_date` | Date | |
@@ -57,17 +72,15 @@ Columns:
 
 ### Events table
 
-In addition to the subscribers table (aggregate state, one row per user), create a second table — an **append-only timeline with one row per event**. The bot reads its API name from `EVENTS_TABLE` in `config.py` (default `events`). Note: grist-api cannot create tables, so create it once in the Grist UI; at startup the bot probes it and logs the required schema if missing.
+The fourth table is an **append-only timeline with one row per event**. Note: grist-api cannot create tables, so create all tables once in the Grist UI; at startup the bot probes them and logs the required schema if missing.
 
 Columns:
 
 | Column | Type | Notes |
 |---|---|---|
 | `event_type` | Text | `join` / `leave` / `rejoin` / `reaction` / `comment` |
-| `user_id` | Text | Empty for anonymous reactions |
-| `username` | Text | |
-| `first_name` | Text | |
-| `chat_id` | Text | |
+| `tg_user` | Ref:Users | Empty for anonymous reactions |
+| `chat` | Ref:Chats | |
 | `message_id` | Numeric | 0 when not applicable |
 | `reaction` | Text | Emoji, only for reaction events |
 | `comment_text` | Text | First 500 chars, only for comment events |

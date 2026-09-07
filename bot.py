@@ -28,8 +28,8 @@ async def setup_bot():
     """Set up and configure the bot with all handlers."""
     # Initialize the Grist client
     grist_client = GristSimpleClient()
-    if not grist_client.init_table():
-        logger.error("Failed to initialize Grist table")
+    if not grist_client.init_tables():
+        logger.error("Failed to initialize Grist tables (Users/Chats/Membership)")
         sys.exit(1)
 
     # The events table is additive: warn but keep running if it's missing
